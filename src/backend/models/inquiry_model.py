@@ -62,7 +62,7 @@ class Inquiry(Base):
     status = Column(SAEnum(InquiryStatus, name="inquiry_status_enum"), default=InquiryStatus.new, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    customer = relationship("Customer", back_populates="inquiries")
+    customer = relationship("CustomerModel", back_populates="inquiries")
     seller = relationship("User", back_populates="inquiries")
     additional_info = relationship("AdditionalInquiryInfo", back_populates="inquiry", uselist=False, cascade="all, delete-orphan")
     furnace_details = relationship("FurnaceDetails", back_populates="inquiry", uselist=False, cascade="all, delete-orphan")

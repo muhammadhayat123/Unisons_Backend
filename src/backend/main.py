@@ -18,7 +18,6 @@ except Exception as e:
     print(f"Table creation note: {e}")
 
 from src.backend.routes.user_route import user_route
-from src.backend.routes.company_route import company_route
 from src.backend.routes.customer_route import customer_route
 from src.backend.routes.inquiry_route import inquiry_route
 from src.backend.routes.admin_route import admin_route
@@ -49,7 +48,6 @@ app.add_middleware(
 app.include_router(user_route, prefix="/user", tags=["user"])
 
 # Existing routes
-app.include_router(company_route)
 app.include_router(customer_route)
 app.include_router(inquiry_route)
 app.include_router(admin_route)

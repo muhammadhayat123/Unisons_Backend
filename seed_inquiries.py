@@ -4,7 +4,7 @@ import random
 
 from src.backend.config.db import SessionLocal
 from src.backend.models.user_model import User, Designation
-from src.backend.models.customer_model import Customer, Personnel
+from src.backend.models.customer_model import CustomerModel as Customer, PersonnelModel as Personnel
 from src.backend.models.inquiry_model import (
     Inquiry, InquiryStatus, LocalImport, NewRepeat, MillType,
     StandCode, ArrangementType, NewReplacement,

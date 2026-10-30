@@ -8,7 +8,6 @@ _env_path = Path(__file__).resolve().parents[1] / ".env"
 load_dotenv(dotenv_path=_env_path)
 
 from src.backend.models.user_model import Base  # noqa: E402
-import src.backend.models.company_model  # noqa: F401,E402
 import src.backend.models.customer_model  # noqa: F401,E402
 import src.backend.models.inquiry_model  # noqa: F401,E402
 import src.backend.models.tracking_model  # noqa: F401,E402

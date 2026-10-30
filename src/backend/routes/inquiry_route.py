@@ -12,9 +12,8 @@ from src.backend.models.inquiry_model import (
     CCMDetails, RollingMillDetails, RollingMillStand, Product,
     SpecialInstructions, Signature
 )
-from src.backend.models.customer_model import Customer, Personnel
+from src.backend.models.customer_model import CustomerModel as Customer, PersonnelModel as Personnel
 from src.backend.models.user_model import User
-from src.backend.models.company_model import CompanyProfile
 from src.backend.schemas.inquiry_schema import (
     InquiryCreate, InquiryStatusUpdate, InquiryListResponse, InquiryDetailResponse,
     AdditionalInfoCreate, FurnaceDetailsCreate, CCMDetailsCreate,
@@ -31,8 +30,8 @@ from src.backend.services.pdf_service import generate_inquiry_pdf
 inquiry_route = APIRouter(prefix="/api/inquiries", tags=["inquiries"])
 
 
-def load_full_inquiry(inquiry_id: int, db: Session) -> Inquiry:
-    inquiry = (
+def load_full_inquiry(inquiry_id: str | int, db: Session) -> Inquiry:
+    query = (
         db.query(Inquiry)
         .options(
             joinedload(Inquiry.customer).joinedload(Customer.personnel),
@@ -45,10 +44,12 @@ def load_full_inquiry(inquiry_id: int, db: Session) -> Inquiry:
             joinedload(Inquiry.special_instructions),
             joinedload(Inquiry.signature),
         )
-        .filter(Inquiry.id == inquiry_id)
-        .first()
     )
-    return inquiry
+    
+    if isinstance(inquiry_id, int) or (isinstance(inquiry_id, str) and inquiry_id.isdigit()):
+        return query.filter(Inquiry.id == int(inquiry_id)).first()
+    else:
+        return query.filter(Inquiry.inquiry_ref_id == str(inquiry_id)).first()
 
 
 @inquiry_route.get("", response_model=dict)
@@ -203,10 +204,16 @@ async def create_inquiry(
 
 
 @inquiry_route.get("/{inquiry_id}")
-def get_inquiry(inquiry_id: int, db: Session = Depends(get_db), _: dict = Depends(get_current_user)):
+def get_inquiry(inquiry_id: str, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
     inquiry = load_full_inquiry(inquiry_id, db)
     if not inquiry:
         raise HTTPException(status_code=404, detail="Inquiry not found")
+        
+    # If we want to restrict seller access in the future, it can go here.
+    if current_user["designation"] == "seller" and inquiry.seller_id != current_user["user_id"]:
+        # Allow access if it's assigned to them or we have demo data
+        pass
+
     return {
         "id": inquiry.id,
         "inquiry_ref_id": inquiry.inquiry_ref_id,
@@ -224,10 +231,10 @@ def get_inquiry(inquiry_id: int, db: Session = Depends(get_db), _: dict = Depend
             "ho_address": inquiry.customer.ho_address,
             "website": inquiry.customer.website,
             "personnel": [
-                {"id": p.id, "personnel_ref_id": p.personnel_ref_id, "concerned_person": p.concerned_person,
-                 "department": p.department, "designation": p.designation, "email": p.email, "phone": p.phone}
+                {"id": p.id, "personnel_ref_id": getattr(p, "personnel_ref_id", ""), "concerned_person": getattr(p, "cp_name", ""),
+                 "department": getattr(p, "department", ""), "designation": getattr(p, "desg", ""), "email": getattr(p, "email", ""), "phone": getattr(p, "phone", "")}
                 for p in inquiry.customer.personnel
-            ]
+            ] if inquiry.customer.personnel else []
         },
         "seller": {"id": inquiry.seller.id, "username": inquiry.seller.username, "email": inquiry.seller.email},
         "additional_info": {
@@ -292,8 +299,8 @@ def get_inquiry(inquiry_id: int, db: Session = Depends(get_db), _: dict = Depend
 
 
 @inquiry_route.patch("/{inquiry_id}/status")
-def update_inquiry_status(inquiry_id: int, data: InquiryStatusUpdate, db: Session = Depends(get_db), _: dict = Depends(require_admin)):
-    inquiry = db.query(Inquiry).filter(Inquiry.id == inquiry_id).first()
+def update_inquiry_status(inquiry_id: str, data: InquiryStatusUpdate, db: Session = Depends(get_db), _: dict = Depends(require_admin)):
+    inquiry = load_full_inquiry(inquiry_id, db)
     if not inquiry:
         raise HTTPException(status_code=404, detail="Inquiry not found")
     inquiry.status = data.status
@@ -303,8 +310,8 @@ def update_inquiry_status(inquiry_id: int, data: InquiryStatusUpdate, db: Sessio
 
 
 @inquiry_route.delete("/{inquiry_id}", status_code=204)
-def delete_inquiry(inquiry_id: int, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
-    inquiry = db.query(Inquiry).filter(Inquiry.id == inquiry_id).first()
+def delete_inquiry(inquiry_id: str, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
+    inquiry = load_full_inquiry(inquiry_id, db)
     if not inquiry:
         raise HTTPException(status_code=404, detail="Inquiry not found")
     db.delete(inquiry)
@@ -312,18 +319,16 @@ def delete_inquiry(inquiry_id: int, db: Session = Depends(get_db), current_user:
 
 
 @inquiry_route.get("/{inquiry_id}/pdf")
-def download_inquiry_pdf(inquiry_id: int, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
+def download_inquiry_pdf(inquiry_id: str, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
     inquiry = load_full_inquiry(inquiry_id, db)
     if not inquiry:
         raise HTTPException(status_code=404, detail="Inquiry not found")
-    company = db.query(CompanyProfile).first()
     personnel_list = inquiry.customer.personnel if inquiry.customer else []
     furnaces_list = inquiry.furnace_details.furnaces if inquiry.furnace_details else []
     stands_list = inquiry.rolling_mill_details.stands if inquiry.rolling_mill_details else []
     try:
         pdf_bytes = generate_inquiry_pdf(
             inquiry=inquiry,
-            company=company,
             customer=inquiry.customer,
             seller=inquiry.seller,
             personnel_list=personnel_list,
@@ -342,10 +347,13 @@ def download_inquiry_pdf(inquiry_id: int, db: Session = Depends(get_db), current
         raise HTTPException(status_code=500, detail=f"PDF generation failed: {str(e)}")
 
 @inquiry_route.put("/{inquiry_id}", response_model=InquiryDetailResponse)
-def update_inquiry(inquiry_id: int, data: InquiryCreate, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
-    inquiry = db.query(Inquiry).filter(Inquiry.id == inquiry_id).first()
+def update_inquiry(inquiry_id: str, data: InquiryCreate, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
+    inquiry = load_full_inquiry(inquiry_id, db)
     if not inquiry:
         raise HTTPException(status_code=404, detail="Inquiry not found")
+    
+    inquiry_id = inquiry.id # convert back to int ID if necessary for relations
+
 
     # Update Customer
     inquiry.customer_id = data.customer_id
@@ -400,3 +408,22 @@ def update_inquiry(inquiry_id: int, data: InquiryCreate, db: Session = Depends(g
     db.commit()
     
     return get_inquiry(inquiry_id, db, current_user)
+
+@inquiry_route.get("/dashboard/stats")
+def get_dashboard_stats(db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
+    from sqlalchemy import func
+    q = db.query(Inquiry.status, func.count(Inquiry.id)).group_by(Inquiry.status)
+    if current_user.get("designation") == "seller":
+        q = q.filter(Inquiry.seller_id == current_user["id"])
+    
+    stats = q.all()
+    total = sum([count for _, count in stats])
+    status_counts = {status: count for status, count in stats}
+    
+    return {
+        "total": total,
+        "new": status_counts.get("New", 0),
+        "in_progress": status_counts.get("In Progress", 0) + status_counts.get("Contacted", 0) + status_counts.get("Pending", 0),
+        "completed": status_counts.get("Completed", 0),
+        "cancelled": status_counts.get("Cancelled", 0) + status_counts.get("Rejected", 0),
+    }

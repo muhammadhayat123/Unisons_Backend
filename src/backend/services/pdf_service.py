@@ -60,7 +60,7 @@ def section_title(text):
     ]))
     return [Spacer(1, 4), t, Spacer(1, 2)]
 
-def generate_inquiry_pdf(inquiry, company, customer, seller, personnel_list, products_list, furnaces_list, stands_list) -> bytes:
+def generate_inquiry_pdf(inquiry, customer, seller, personnel_list, products_list, furnaces_list, stands_list) -> bytes:
     buffer = io.BytesIO()
     
     # A4 is 595.27 x 841.89 points
@@ -116,7 +116,9 @@ def generate_inquiry_pdf(inquiry, company, customer, seller, personnel_list, pro
     p_rows = []
     if personnel_list:
         for p in personnel_list:
-            p_rows.append([cell(val(p.concerned_person), align=TA_CENTER), cell(val(p.department), align=TA_CENTER), cell(val(p.designation), align=TA_CENTER), cell(val(p.email), align=TA_CENTER), cell(val(p.phone), align=TA_CENTER)])
+            cp_name = getattr(p, "cp_name", getattr(p, "concerned_person", ""))
+            desg = getattr(p, "desg", getattr(p, "designation", ""))
+            p_rows.append([cell(val(cp_name), align=TA_CENTER), cell(val(p.department), align=TA_CENTER), cell(val(desg), align=TA_CENTER), cell(val(p.email), align=TA_CENTER), cell(val(p.phone), align=TA_CENTER)])
     else:
         p_rows.append([cell(""), cell(""), cell(""), cell(""), cell("")])
     
